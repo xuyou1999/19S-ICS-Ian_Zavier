@@ -9,7 +9,7 @@ from tkinter import *
 import random
 import time
  
-import msvcrt
+
  
 class Ball:
     #创建一个球类

@@ -5,8 +5,14 @@ import sys
 import json
 from chat_utils import *
 import client_state_machine as csm
+from tkinter.dialog import *
+from tkinter import *
+import tkinter as tk
 
 import threading
+
+from tkinter import *
+from tkinter.dialog import *
 
 class Client:
     def __init__(self, args):
@@ -17,6 +23,7 @@ class Client:
         self.local_msg = ''
         self.peer_msg = ''
         self.args = args
+        self.user = {}
 
     def quit(self):
         self.socket.shutdown(socket.SHUT_RDWR)
@@ -60,24 +67,140 @@ class Client:
             self.system_msg = ''
 
     def login(self):
-        my_msg, peer_msg = self.get_msgs()
-        if len(my_msg) > 0:
-            self.name = my_msg
-            msg = json.dumps({"action":"login", "name":self.name})
-            self.send(msg)
+           
+        def log_in():
+            global con1
+            con1 = e1.get()
+            con2 = e2.get()
+            len1 = len(con1)
+            len2 = len(con2)
+            
+            mysend(self.socket,json.dumps({"action":"login","name":con1,"password":con2}))          
             response = json.loads(self.recv())
-            if response["status"] == 'ok':
+            
+            if response["server_response"] == "login succeed":
+                c['text'] = 'You successfully logged in!'
+                
                 self.state = S_LOGGEDIN
                 self.sm.set_state(S_LOGGEDIN)
-                self.sm.set_myname(self.name)
+                self.sm.set_myname(con1)
                 self.print_instructions()
-                return (True)
-            elif response["status"] == 'duplicate':
-                self.system_msg += 'Duplicate username, try again'
-                return False
-        else:               # fix: dup is only one of the reasons
-           return(False)
 
+                return True
+                
+            elif response["server_response"] == 'wrong password':
+                c['text'] = 'The password is wrong. Please try again'
+            
+            else:
+                c['text'] = 'Please register first'
+                
+                
+            
+
+            e1.delete(0, len1)
+            e2.delete(0, len2)
+    
+        def register():
+    
+            root2 = tk.Tk()
+            root2.geometry('450x200')
+            root2.title('Register Page')
+    
+            def confirm():
+                con1 = e1.get()
+                con2 = e2.get()
+                con3 = e3.get()
+                len1 = len(con1)
+                len2 = len(con2)
+                len3 = len(con3)
+                if con2 == con3:
+                    
+                    mysend(self.socket,json.dumps({"action":"register","name":con1,"password":con2}))          
+                    response = json.loads(self.recv())
+                    if response["server_response"] == "register_succeed":
+          
+                        c['text'] = 'successfully registered! '
+                        root2.destroy()
+                    else:
+                        f['text'] = 'user name has been used'
+                        
+                else:
+                    f['text'] = 'Two passwords are not the same. \nPlease try again!'
+        
+                
+                    e1.delete(0, len1)
+                    e2.delete(0, len2)
+                    e3.delete(0, len3)
+        
+            
+            c['text'] = ''
+            
+            b1 = Label(root2, text='User name:                                ')
+            b1.grid(row=0, column=0, sticky=W)
+            
+            e1 = Entry(root2)
+            e1.grid(row=0, column=1, sticky=E)
+            
+            b2 = Label(root2, text='password:                                 ')
+            b2.grid(row=1, column=0, sticky=W)
+            
+            e2 = Entry(root2)
+            e2['show'] = '*'
+            e2.grid(row=1, column=1, sticky=E)
+            
+            b3 = Label(root2, text='password again:                             ')
+            b3.grid(row=2, column=0, sticky=W)
+            
+            e3 = Entry(root2)
+            e3['show'] = '*'
+            e3.grid(row=2, column=1, sticky=E)
+            
+            d = Button(root2, text='确认', command=confirm)
+            d.grid(row=3, column=1, sticky=E)
+            
+            f = Label(root2, text='')
+            f.grid(row=3)
+            
+
+
+    
+ 
+        global f
+        global c
+        
+
+        
+        root = tk.Tk()
+        root.geometry('400x200')
+        root.title('Log in Page')
+        
+        b1 = Label(root, text='User name:                            ')
+        b1.grid(row=0, column=0, sticky=W)
+        
+        e1 = Entry(root)
+        e1.grid(row=0, column=1, sticky=E)
+        
+        b2 = Label(root, text='Password:                            ')
+        b2.grid(row=1, column=0, sticky=W)
+        
+        e2 = Entry(root)
+        e2['show'] = '*'
+        e2.grid(row=1, column=1, sticky=E)
+        
+        c = Label(root, text='')
+        c.grid(row=3)
+        
+        b = Button(root, text='Register', command=register)
+        b.grid(row=2, column=1, sticky=W)
+                
+        d = Button(root, text='Log in', command=log_in)
+        d.grid(row=2, column=1, sticky=E)
+        
+        root.mainloop()
+        
+        
+
+        
 
     def read_input(self):
         while True:
@@ -86,21 +209,25 @@ class Client:
 
     def print_instructions(self):
         self.system_msg += menu
+        
+    
 
     def run_chat(self):
         self.init_chat()
-        self.system_msg += 'Welcome to ICS chat\n'
-        self.system_msg += 'Please enter your name: '
-        self.output()
-        while self.login() != True:
+        self.login()
+        
+        if self.state == S_LOGGEDIN:
+            self.system_msg += 'Welcome, ' + con1 + '!'
             self.output()
-        self.system_msg += 'Welcome, ' + self.get_name() + '!'
-        self.output()
-        while self.sm.get_state() != S_OFFLINE:
-            self.proc()
-            self.output()
-            time.sleep(CHAT_WAIT)
-        self.quit()
+            while self.sm.state != S_OFFLINE:
+                self.proc()
+                self.output()
+                time.sleep(CHAT_WAIT)
+            self.quit()
+
+
+        
+       
 
 #==============================================================================
 # main processing loop
@@ -108,3 +235,5 @@ class Client:
     def proc(self):
         my_msg, peer_msg = self.get_msgs()
         self.system_msg += self.sm.proc(my_msg, peer_msg)
+        
+        
