@@ -152,7 +152,7 @@ class ClientSM:
                     self.out_msg += " json.loads failed " + str(err)
                     return self.out_msg
             
-                if peer_msg["action"] == "connect":
+                if peer_msg.get("action", '') == "connect":
 
                     # ----------your code here------#
                     if peer_msg['status'] == "request":
@@ -161,7 +161,7 @@ class ClientSM:
                         self.out_msg += '-----------------------------------\n'
                     # ----------end of your code----#
 ###########################################game######################
-                if peer_msg['action'] == 'game':
+                if peer_msg.get("action", '') == 'game':
                     self.out_msg += peer_msg['from'] + ' want to play game with you. Type [y_ball color] to accept, [n] to deny'
                     self.peer = peer_msg['from']
                     self.state = S_CONFIRMING

@@ -14,6 +14,8 @@ import json
 import pickle as pkl
 from chat_utils import *
 import chat_group as grp
+#encryption
+from Crypto.Hash import SHA256
 
 
 class Server:
@@ -32,6 +34,8 @@ class Server:
         self.indices = {}
         # sonnet
         self.sonnet = indexer.PIndex("AllSonnets.txt")
+        self.users = {}
+ 
 
     def new_client(self, sock):
         # add to all sockets and to new clients
@@ -39,42 +43,62 @@ class Server:
         sock.setblocking(0)
         self.new_clients.append(sock)
         self.all_sockets.append(sock)
-
-    def login(self, sock):
+        
+    def register(self, sock, msg):
+        name = msg["name"]
+        if name in self.users:
+            mysend(sock,json.dumps({"server_response":"Name has been used"}))
+        else:
+            password = msg["password"]
+            #hash
+            self.users[name] = SHA256.new((password).encode('utf-8')).hexdigest()
+            self.indices[name] = indexer.Index(name)
+            print(name + ' has registered')
+            mysend(sock, json.dumps({"server_response":"register_succeed"}))
+        
+        
+    def login(self, sock, msg):
         # read the msg that should have login code plus username
-        try:
-            msg = json.loads(myrecv(sock))
-            if len(msg) > 0:
+                
+        name = msg["name"]
+        password =SHA256.new((msg["password"]).encode('utf-8')).hexdigest()
+        if name in self.users:
+            if password == self.users[name]:
+                mysend(sock, json.dumps({"server_response":"login succeed"}))
+                status = S_LOGGEDIN
+            
+            else:
+                mysend(sock, json.dumps({"server_response":"wrong password"}))
+                return None
+        else:
+       
+            mysend(sock,json.dumps({"server_response":'fail'}))
+            return None
+                                
+                                
+        if status == S_LOGGEDIN:
+                    # move socket from new clients list to logged clients
+                    #   if self.group.is_member(name) != True:
+            self.new_clients.remove(sock)
+                    # add into the name to sock mapping
+            self.logged_name2sock[name] = sock
+            self.logged_sock2name[sock] = name
+            print(name + ' has logged in')
+            self.group.join(name)
+                    # load chat history of that user
+            if name not in self.indices.keys():
+                try:
+                    self.indices[name] = pkl.load(
+                    open(name + '.idx', 'rb'))
+                except IOError:  # chat index does not exist, then create one
+                    self.indices[name] = indexer.Index(name)
+            
+            else:
+                mysend(sock, json.dumps({"server_response": 'fail'}))
+        
+        
+        
 
-                if msg["action"] == "login":
-                    name = msg["name"]
-                    if self.group.is_member(name) != True:
-                        # move socket from new clients list to logged clients
-                        self.new_clients.remove(sock)
-                        # add into the name to sock mapping
-                        self.logged_name2sock[name] = sock
-                        self.logged_sock2name[sock] = name
-                        # load chat history of that user
-                        if name not in self.indices.keys():
-                            try:
-                                self.indices[name] = pkl.load(
-                                    open(name + '.idx', 'rb'))
-                            except IOError:  # chat index does not exist, then create one
-                                self.indices[name] = indexer.Index(name)
-                        print(name + ' logged in')
-                        self.group.join(name)
-                        mysend(sock, json.dumps(
-                            {"action": "login", "status": "ok"}))
-                    else:  # a client under this name has already logged in
-                        mysend(sock, json.dumps(
-                            {"action": "login", "status": "duplicate"}))
-                        print(name + ' duplicate login attempt')
-                else:
-                    print('wrong code received')
-            else:  # client died unexpectedly
-                self.logout(sock)
-        except:
-            self.all_sockets.remove(sock)
 
     def logout(self, sock):
         # remove sock from all lists
@@ -98,6 +122,8 @@ class Server:
             # handle connect request this is implemented for you
             # ==============================================================================
             msg = json.loads(msg)
+            
+            
             if msg["action"] == "connect":
                 to_name = msg["target"]
                 from_name = self.logged_sock2name[from_sock]
@@ -118,6 +144,39 @@ class Server:
                     msg = json.dumps(
                         {"action": "connect", "status": "no-user"})
                 mysend(from_sock, msg)
+# ==============================================================================
+# handle messeage exchange: IMPLEMENT THIS
+# ==============================================================================
+            elif msg['action'] == 'register':
+                name = msg['name']
+                password = msg['password']
+                the_guys = self.group.list_me(from_name)[1:]
+                for g in the_guys:
+                    to_sock = self.logged_name2sock[g]
+                    
+                if name not in self.users:
+                    self.users[name] = password
+                    mysend(to_sock, json.dumps({'server_response': 'register_succeed'}))
+                    
+                else:
+                    mysend(to_sock, json.dumps({'server_response': 'register_unsucceed'}))
+                    
+                    
+            elif msg['action'] == 'login':
+                name = msg['name']
+                password = msg['password']
+                the_guys = self.group.list_me(from_name)[1:]
+                for g in the_guys:
+                    to_sock = self.logged_name2sock[g]
+                    
+                if name in self.users:
+                    if self.users[name] == password:
+                        mysend(to_sock, json.dumps({'server_response': 'login succeed'}))
+                    else:
+                        mysend(to_sock, json.dumps({'server_response': 'wrong password'}))
+                else:
+                    mysend(to_sock, json.dumps({'server_response': 'login'}))
+            
 #############################################GAME#####################################
             elif msg['action'] == 'game':
                 if msg['status'] == 'request':
@@ -148,9 +207,7 @@ class Server:
                 mysend(to_sock, json.dumps({"action": "move", "step": msg['step']}))
                     
 #############################################GAME#####################################
-# ==============================================================================
-# handle messeage exchange: IMPLEMENT THIS
-# ==============================================================================
+            
             elif msg["action"] == "exchange":
                 from_name = self.logged_sock2name[from_sock]
                 """
@@ -158,10 +215,10 @@ class Server:
                 """
                 # IMPLEMENTATION
                 # ---- start your code ---- #
-                all_guys = self.group.list_me(from_name)
-                ctime = time.strftime('%d.%m.%y,%H:%M', time.localtime())
-                for guy in all_guys:
-                    self.indices[guy].add_msg_and_index("({})".format(from_name) + ctime + ' ' + msg['message'])
+                m = msg['message']
+                ctime = time.strftime('%m.%y,%H:%M', time.localtime())
+                message_add = '[' + ctime + ']' + m
+                self.indices[from_name].add_msg_and_index(m)
 
                 # ---- end of your code --- #
 
@@ -172,9 +229,8 @@ class Server:
                     # IMPLEMENTATION
                     # ---- start your code ---- #
                     
-                    mysend(
-                        to_sock, json.dumps(
-                            {"action": "exchange", "from": from_name, "message": msg['message']}))
+                    mysend(to_sock, json.dumps(
+                                {"action": "exchange", "from": from_name, "message": message_add}))
 
                     # ---- end of your code --- #
 
@@ -198,8 +254,7 @@ class Server:
 
                 # IMPLEMENTATION
                 # ---- start your code ---- #
-                from_name = self.logged_sock2name[from_sock]
-                msg = self.group.list_all(from_name)
+                msg = str(self.group.list_all(''))
 
                 # ---- end of your code --- #
                 mysend(from_sock, json.dumps(
@@ -211,11 +266,13 @@ class Server:
 
                 # IMPLEMENTATION
                 # ---- start your code ---- #
-                poem_lst = self.sonnet.get_poem(int(msg['target']))
+                num = int(msg["target"])
                 poem = ''
-                for line in poem_lst:
-                    poem += line + "\n"
-                print('here:\n', poem)
+                content = self.sonnet.get_poem(num)
+                for i in content:
+                    poem += i + '\n'
+                    
+                    
 
                 # ---- end of your code --- #
 
@@ -236,12 +293,13 @@ class Server:
                 # IMPLEMENTATION
                 # ---- start your code ---- #
                 from_name = self.logged_sock2name[from_sock]
-                search_rslt_lst = []
-                
-                for index, result in self.indices[from_name].search(msg['target']):
-                    search_rslt_lst.append(result)#"needs to use self.indices search to work"
-                search_rslt = '\n'.join(search_rslt_lst)
-                print('server side search: ' + search_rslt)
+                search_rslt = ''
+                try:
+                    for sentence in self.indices:
+                        search_rslt += '(' + str(sentence) + ')' + str(self.indices[sentence].search(msg["target"])) + '\n'
+                except:
+                    search_rslt = ''
+                    
 
                 # ---- end of your code --- #
                 mysend(from_sock, json.dumps(
@@ -250,7 +308,7 @@ class Server:
 # ==============================================================================
 #                 the "from" guy really, really has had enough
 # ==============================================================================
-                
+
         else:
             # client died unexpectedly
             self.logout(from_sock)
@@ -269,7 +327,13 @@ class Server:
             print('checking new clients..')
             for newc in self.new_clients[:]:
                 if newc in read:
-                    self.login(newc)
+                
+                    msg = json.loads(myrecv(newc))
+                    action = msg['action']
+                    if action == "register":
+                        self.register(newc,msg)
+                    elif action == "login":
+                        self.login(newc,msg)
             print('checking for new connections..')
             if self.server in read:
                 # new client request
