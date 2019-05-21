@@ -28,7 +28,7 @@ S_CONFIRMING = 5
 
 SIZE_SPEC = 5
 
-CHAT_WAIT = 0.02
+CHAT_WAIT = 0.0208
 
 def print_state(state):
     print('**** State *****::::: ')
